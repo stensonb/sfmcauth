@@ -78,7 +78,11 @@ func main() {
 
 	log.Printf("public key: %s", string(content))
 
-	ssh_client()
+	err = ssh_client()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 }
 
 func ssh_client() error {
@@ -115,7 +119,6 @@ func ssh_client() error {
 	endpoint := fmt.Sprintf("%s:%s", SFMC_AUTH_ENDPOINT, SFMC_AUTH_PORT)
 
 	for {
-
 		client, err := ssh.Dial("tcp", endpoint, config)
 		if err != nil {
 			return err
