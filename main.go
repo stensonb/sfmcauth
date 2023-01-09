@@ -127,13 +127,20 @@ func ssh_client() error {
 		defer spin.Stop()
 		var client *ssh.Client
 		var err error
-		for client, err = ssh.Dial("tcp", endpoint, config); err != nil; {
-			time.Sleep(10 * time.Second)
+
+		firstPass := true
+		for firstPass || err != nil {
+ 	 		client, err = ssh.Dial("tcp", endpoint, config)
+			if err != nil {
+				// TODO exponential decay
+				time.Sleep(10 * time.Second)
+			}
+			firstPass = false
 		}
-		defer client.Close()
+		
 		spin.Stop()
 
-		log.Printf("granting network access for %v\n", strings.Split(client.LocalAddr().String(), ":")[0])
+		log.Printf("minecraft server at '%s' should now be accessible from '%s'.  keep this window open/running until you're done.", SFMC_AUTH_ENDPOINT, strings.Split(client.LocalAddr().String(), ":")[0])
 
 		log.Println(client.Wait())
 	}
