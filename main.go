@@ -29,6 +29,12 @@ var KEY_PATH_PUB = filepath.Join(KEY_PATH, "id_ed25519.pub")
 
 var spin = spinner.New(spinner.CharSets[35], 100*time.Millisecond)
 
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 func buildKeypair() error {
 	pubKey, privKey, err := ed25519.GenerateKey(nil)
 	if err != nil {
@@ -66,6 +72,7 @@ func buildKeypair() error {
 }
 
 func main() {
+	log.Printf("version %s, commit %s, built at %s", version, commit, date)
 	if _, err := os.Stat(KEY_PATH_PRIV); err == nil {
 		log.Println("keys exist.  using existing keys.")
 	} else {
@@ -130,19 +137,42 @@ func ssh_client() error {
 
 		firstPass := true
 		for firstPass || err != nil {
- 	 		client, err = ssh.Dial("tcp", endpoint, config)
+			client, err = ssh.Dial("tcp", endpoint, config)
 			if err != nil {
 				// TODO exponential decay
 				time.Sleep(10 * time.Second)
 			}
 			firstPass = false
 		}
-		
+
 		spin.Stop()
 
 		ip_addr := strings.Split(client.LocalAddr().String(), ":")
 		log.Printf("minecraft server at '%s' should now be accessible from your ip ('%s').  keep this window open/running until you're done.", SFMC_AUTH_ENDPOINT, strings.Join(ip_addr[:len(ip_addr)-1], ":"))
 
+		// Create a session
+		session, err := client.NewSession()
+		if err != nil {
+			return err
+		}
+		defer session.Close()
+
+		// Set up terminal modes
+		modes := ssh.TerminalModes{
+			ssh.ECHO:          0,     // disable echoing
+			ssh.TTY_OP_ISPEED: 14400, // input speed = 14.4kbaud
+			ssh.TTY_OP_OSPEED: 14400, // output speed = 14.4kbaud
+		}
+
+		// Request pseudo terminal
+		if err := session.RequestPty("xterm", 40, 80, modes); err != nil {
+			return err
+		}
+
+		// Start remote shell to actually trigger /usr/sbin/authpf
+		if err := session.Shell(); err != nil {
+			return err
+		}
 		log.Println(client.Wait())
 	}
 
