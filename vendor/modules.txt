@@ -2,6 +2,18 @@
 ## explicit; go 1.14
 github.com/adrg/xdg
 github.com/adrg/xdg/internal/pathutil
+# github.com/briandowns/spinner v1.20.0
+## explicit; go 1.14
+github.com/briandowns/spinner
+# github.com/fatih/color v1.7.0
+## explicit
+github.com/fatih/color
+# github.com/mattn/go-colorable v0.1.2
+## explicit
+github.com/mattn/go-colorable
+# github.com/mattn/go-isatty v0.0.8
+## explicit
+github.com/mattn/go-isatty
 # github.com/mikesmitty/edkey v0.0.0-20170222072505-3356ea4e686a
 ## explicit
 github.com/mikesmitty/edkey
@@ -20,4 +32,9 @@ golang.org/x/crypto/ssh/internal/bcrypt_pbkdf
 ## explicit; go 1.17
 golang.org/x/sys/cpu
 golang.org/x/sys/internal/unsafeheader
+golang.org/x/sys/plan9
+golang.org/x/sys/unix
 golang.org/x/sys/windows
+# golang.org/x/term v0.4.0
+## explicit; go 1.17
+golang.org/x/term

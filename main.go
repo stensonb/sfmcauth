@@ -9,21 +9,25 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/adrg/xdg"
+	"github.com/briandowns/spinner"
 	"github.com/mikesmitty/edkey"
 	"golang.org/x/crypto/ssh"
 )
 
 const APP_NAME = "sfmcauth"
 
-const SFMC_AUTH_ENDPOINT = "192.168.0.1"
+const SFMC_AUTH_ENDPOINT = "sf.siliconvortex.com"
 const SFMC_AUTH_PORT = "22"
-const SFMC_AUTH_USER = "stensonb"
+const SFMC_AUTH_USER = "sfmcauth"
 
 var KEY_PATH = filepath.Join(xdg.DataHome, APP_NAME)
 var KEY_PATH_PRIV = filepath.Join(KEY_PATH, "id_ed25519")
 var KEY_PATH_PUB = filepath.Join(KEY_PATH, "id_ed25519.pub")
+
+var spin = spinner.New(spinner.CharSets[35], 100*time.Millisecond)
 
 func buildKeypair() error {
 	pubKey, privKey, err := ed25519.GenerateKey(nil)
@@ -119,11 +123,15 @@ func ssh_client() error {
 	endpoint := fmt.Sprintf("%s:%s", SFMC_AUTH_ENDPOINT, SFMC_AUTH_PORT)
 
 	for {
-		client, err := ssh.Dial("tcp", endpoint, config)
-		if err != nil {
-			return err
+		spin.Start()
+		defer spin.Stop()
+		var client *ssh.Client
+		var err error
+		for client, err = ssh.Dial("tcp", endpoint, config); err != nil; {
+			time.Sleep(10 * time.Second)
 		}
 		defer client.Close()
+		spin.Stop()
 
 		log.Printf("granting network access for %v\n", strings.Split(client.LocalAddr().String(), ":")[0])
 
