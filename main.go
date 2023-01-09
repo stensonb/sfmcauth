@@ -80,7 +80,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	log.Printf("public key: %s", string(content))
+	log.Print("share this public key with us on our Discord server to request access: ", string(content))
 
 	err = ssh_client()
 	if err != nil {
@@ -140,7 +140,8 @@ func ssh_client() error {
 		
 		spin.Stop()
 
-		log.Printf("minecraft server at '%s' should now be accessible from '%s'.  keep this window open/running until you're done.", SFMC_AUTH_ENDPOINT, strings.Split(client.LocalAddr().String(), ":")[0])
+		ip_addr := strings.Split(client.LocalAddr().String(), ":")
+		log.Printf("minecraft server at '%s' should now be accessible from your ip ('%s').  keep this window open/running until you're done.", SFMC_AUTH_ENDPOINT, strings.Join(ip_addr[:len(ip_addr)-1], ":"))
 
 		log.Println(client.Wait())
 	}
