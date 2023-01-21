@@ -15,6 +15,8 @@ import (
 	"github.com/briandowns/spinner"
 	"github.com/mikesmitty/edkey"
 	"golang.org/x/crypto/ssh"
+
+	qrcode "github.com/skip2/go-qrcode"
 )
 
 const APP_NAME = "sfmcauth"
@@ -86,6 +88,13 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	q, err := qrcode.New(string(content), qrcode.Low)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	log.Printf("\n%s\n", q.ToString(false))
 
 	log.Print("share this public key with us on our Discord server to request access: ", string(content))
 
