@@ -24,10 +24,11 @@ const APP_NAME = "sfmcauth"
 const SFMC_AUTH_ENDPOINT = "sf.siliconvortex.com"
 const SFMC_AUTH_PORT = "22"
 const SFMC_AUTH_USER = "sfmcauth"
+const SSH_KEY = "id_ed25519"
+const SSH_KEY_PUBLIC = "id_ed25519.pub"
 
-var KEY_PATH = filepath.Join(xdg.DataHome, APP_NAME)
-var KEY_PATH_PRIV = filepath.Join(KEY_PATH, "id_ed25519")
-var KEY_PATH_PUB = filepath.Join(KEY_PATH, "id_ed25519.pub")
+var PrivateKeyPath string
+var PublicKeyPath string
 
 var spin = spinner.New(spinner.CharSets[35], 100*time.Millisecond)
 
@@ -36,6 +37,19 @@ var (
 	commit  = "none"
 	date    = "unknown"
 )
+
+func init() {
+	var err error
+	PrivateKeyPath, err = xdg.DataFile(filepath.Join(APP_NAME, SSH_KEY))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	PublicKeyPath, err = xdg.DataFile(filepath.Join(APP_NAME, SSH_KEY_PUBLIC))
+	if err != nil {
+		log.Fatal(err)
+	}
+}
 
 func buildKeypair() error {
 	pubKey, privKey, err := ed25519.GenerateKey(nil)
@@ -56,17 +70,17 @@ func buildKeypair() error {
 	authorizedKey := ssh.MarshalAuthorizedKey(publicKey)
 
 	// make dir if necessary
-	err = os.Mkdir(filepath.Dir(KEY_PATH_PRIV), 0755)
+	err = os.Mkdir(filepath.Dir(PrivateKeyPath), 0755)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	err = ioutil.WriteFile(KEY_PATH_PRIV, privateKey, 0400)
+	err = ioutil.WriteFile(PrivateKeyPath, privateKey, 0400)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	err = ioutil.WriteFile(KEY_PATH_PUB, authorizedKey, 0444)
+	err = ioutil.WriteFile(PublicKeyPath, authorizedKey, 0444)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -75,16 +89,16 @@ func buildKeypair() error {
 
 func main() {
 	log.Printf("version %s, commit %s, built at %s", version, commit, date)
-	if _, err := os.Stat(KEY_PATH_PRIV); err == nil {
+	if _, err := os.Stat(PrivateKeyPath); err == nil {
 		log.Println("keys exist.  using existing keys.")
 	} else {
 		log.Println("keys missing.  generating keys now...")
 		buildKeypair()
 	}
 
-	log.Printf("keys in '%s'\n", KEY_PATH)
+	log.Printf("public key in '%s'\n", PublicKeyPath)
 
-	content, err := ioutil.ReadFile(KEY_PATH_PUB)
+	content, err := ioutil.ReadFile(PublicKeyPath)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -114,7 +128,7 @@ func ssh_client() error {
 	//
 	// If you have an encrypted private key, the crypto/x509 package
 	// can be used to decrypt it.
-	key, err := os.ReadFile(KEY_PATH_PRIV)
+	key, err := os.ReadFile(PrivateKeyPath)
 	if err != nil {
 		return err
 	}
