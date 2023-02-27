@@ -87,21 +87,18 @@ func signRequestHandler(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 	}
 
-	log.Printf("%v", discordIdentity)
+	log.Printf("unmarshalled discord identity: %v", discordIdentity)
 
 	signed, err := GetSignedCert(csr.PublicKey, discordIdentity)
 	if err != nil {
 		http.Error(w, "failed to sign key", http.StatusBadRequest)
 	}
 
-	//	log.Printf("%v", string(signed.Cert))
-
 	signedBytes, err := json.Marshal(signed)
 	if err != nil {
 		http.Error(w, "failed to unmarshal key", http.StatusInternalServerError)
 	}
 
-	log.Println(string(signedBytes))
 	fmt.Fprintf(w, string(signedBytes))
 }
 
@@ -124,14 +121,7 @@ func GetSignedCert(keyToSign string, data OIDCScope) (*types.SignedCert, error) 
 		return nil, err
 	}
 
-	log.Printf("%v", pubKey)
-
 	return types.NewSignedCert(signer, pubKey, signedKeyId)
-}
-
-func validateOIDCCode(code string) error {
-	log.Println("validating OIDC code")
-	return nil
 }
 
 func main() {

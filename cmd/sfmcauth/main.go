@@ -15,6 +15,7 @@ import (
 	"github.com/briandowns/spinner"
 	"github.com/mikesmitty/edkey"
 	"github.com/ravener/discord-oauth2"
+	"github.com/skratchdot/open-golang/open"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/oauth2"
 
@@ -24,9 +25,9 @@ import (
 const APP_NAME = "sfmcauth"
 
 const SFMC_AUTH_SIGNER_URL = "http://localhost:8080/sign"
-const SFMC_AUTH_ENDPOINT = "sf.siliconvortex.com"
+const SFMC_AUTH_ENDPOINT = "localhost" //"sf.siliconvortex.com"
 const SFMC_AUTH_PORT = "22"
-const SFMC_AUTH_USER = "sfmcauth"
+const SFMC_AUTH_USER = "sfmc_auth" //"sfmcauth"
 
 var spin = spinner.New(spinner.CharSets[35], 100*time.Millisecond)
 
@@ -106,8 +107,6 @@ func GetSignedCert(k *KeyPair, oidc_code string) (*types.SignedCert, error) {
 		return nil, err
 	}
 
-	log.Println(string(body))
-
 	var ans types.SignedCert
 
 	err = json.Unmarshal(body, &ans)
@@ -159,14 +158,14 @@ func main() {
         //TODO extract listening port from conf
 	go http.ListenAndServe(":3000", nil)
 
+ 	open.Run("http://localhost:3000")	
+
 	oidc_code := <- oidc_callback_code
 
 	signedCert, err := GetSignedCert(k, oidc_code)
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	log.Printf("signedCert: %v", string(signedCert.Cert))
 
 	err = ssh_client(k, signedCert)
 	if err != nil {

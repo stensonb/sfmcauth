@@ -6,6 +6,7 @@ require (
 	github.com/briandowns/spinner v1.20.0
 	github.com/mikesmitty/edkey v0.0.0-20170222072505-3356ea4e686a
 	github.com/ravener/discord-oauth2 v0.0.0-20220615092331-f6a9839c223e
+	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966
 	golang.org/x/crypto v0.5.0
 	golang.org/x/oauth2 v0.5.0
 )

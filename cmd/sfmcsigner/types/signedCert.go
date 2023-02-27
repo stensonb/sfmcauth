@@ -6,7 +6,6 @@ import (
 	"log"
 	"time"
 
-	//	"github.com/mikesmitty/edkey"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -17,7 +16,8 @@ type SignedCert struct {
 func NewSignedCert(caKeySigner ssh.Signer, keyToSign ssh.PublicKey, signedKeyId string) (*SignedCert, error) {
 	log.Printf("signing key for %s", signedKeyId)
 
-	principals := []string{"sfmcauth"}
+	//principals := []string{"sfmcauth"}
+	principals := []string{"sfmc_auth"}
 
 	serial := uint64(time.Now().UnixNano())
 
