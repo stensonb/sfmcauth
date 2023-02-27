@@ -32,3 +32,6 @@ Listens for authorized ssh client (via signed key), and allows port-forward to m
 4. port-forward localhost:2345 (mc port) to through ssh tunnel
 5. restrict ports to forward
 6. dns name sfmc.siliconvortex.com -> localhost
+7. stream all responses -> json.Decoder
+8. benchmarks
+9. tests

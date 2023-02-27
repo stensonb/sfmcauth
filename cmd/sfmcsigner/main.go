@@ -11,13 +11,12 @@ import (
 	"strings"
 
 	"github.com/ravener/discord-oauth2"
+	"golang.org/x/crypto/ssh"
 	"golang.org/x/oauth2"
 
 	"github.com/stensonb/sfmcauth/cmd/sfmcsigner/types"
 )
 
-const OIDC_AUTH_URL = "https://auth.discord.com/auth"
-const OIDC_TOKEN_URL = "https://auth.discord.com/token"
 const OIDC_REDIRECT_URL = "http://localhost:3000/auth/callback"
 
 // TODO limit size of post
@@ -95,6 +94,8 @@ func signRequestHandler(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "failed to sign key", http.StatusBadRequest)
 	}
 
+	//	log.Printf("%v", string(signed.Cert))
+
 	signedBytes, err := json.Marshal(signed)
 	if err != nil {
 		http.Error(w, "failed to unmarshal key", http.StatusInternalServerError)
@@ -105,7 +106,27 @@ func signRequestHandler(w http.ResponseWriter, req *http.Request) {
 }
 
 func GetSignedCert(keyToSign string, data OIDCScope) (*types.SignedCert, error) {
-	return types.NewSignedCert("somekey", keyToSign, strings.Join([]string{data.Id, data.Username}, "-"))
+	signedKeyId := strings.Join([]string{data.Id, data.Username}, "-")
+
+	key, err := os.ReadFile("test_fixtures/id_ed25519")
+	if err != nil {
+		return nil, err
+	}
+
+	signer, err := ssh.ParsePrivateKey(key)
+	if err != nil {
+		return nil, err
+	}
+
+	// convert keyToSign to ssh.PublicKey
+	pubKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(keyToSign))
+	if err != nil {
+		return nil, err
+	}
+
+	log.Printf("%v", pubKey)
+
+	return types.NewSignedCert(signer, pubKey, signedKeyId)
 }
 
 func validateOIDCCode(code string) error {
