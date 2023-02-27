@@ -3,7 +3,7 @@
 This system authenticates users to the SFMC system, and allows users to connect their local minecraft client to sfmc.siliconvortex.com via SSH tunnel.
 
 # Client
-On startup, a keypair will be created, and stored in the OS's keystore.  The user is authenticated via Discord, and sends the OIDC code, along with private key, to sfmcsigner.siliconvortex.com to get signed.
+On startup, a keypair will be created.  The user is then authenticated via Discord, and sends the OIDC code, along with public key, to sfmcsigner.siliconvortex.com to get a short-lived, signed certificate.
 
 Once signed, this client opens an SSH connection to sfmcssh.siliconvortex.com and port-forwards localhost:2345 to the remote host.
 
@@ -26,12 +26,10 @@ Listens for authorized ssh client (via signed key), and allows port-forward to m
 
 # TODO
 
-1. store key in keystore
-2. call sfmc server to sign key
-3. connect to sfmc ssh endpoint with signed cert
+1. config story
+9. tests
 4. port-forward localhost:2345 (mc port) to through ssh tunnel
 5. restrict ports to forward
 6. dns name sfmc.siliconvortex.com -> localhost
 7. stream all responses -> json.Decoder
 8. benchmarks
-9. tests
