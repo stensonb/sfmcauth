@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/pem"
 	"fmt"
 	"log"
@@ -109,22 +110,28 @@ func GetSignedCert(k *KeyPair, oidc_code string) (*types.SignedCert, error) {
 type RespFromAuthProvider struct {
 	Code  string `form:"code"`
 	State string `form:"state"`
+	//Error string `form:"error"`
 }
 
 func handleCallback(c *gin.Context) {
 	resp := RespFromAuthProvider{}
 
 	if c.ShouldBind(&resp) != nil {
-		log.Fatal("failed to get authorization code from identity provider")
+		//log.Fatal("failed to decode authorization response from identity provider")
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("stuff"))
+	} else if resp.Code == "" {
+		//log.Fatal("failed to get authorization code from identity provider")
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("stuff2"))
+	} else if resp.State != state {
+		//log.Fatal("state does not match")
+		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("stuff3"))
+	} else {
+		oidc_callback_code <- resp.Code
+
+		// TODO discord uses callback even on failure, but appends "error" query parameter
+		// TODO handle this better
+		c.Redirect(http.StatusTemporaryRedirect, SFMC_AUTH_SUCCESSFUL_REDIRECT_URL) // from config?
 	}
-
-	if resp.State != state {
-		log.Fatal("state does not match")
-	}
-
-	oidc_callback_code <- resp.Code
-
-	c.Redirect(http.StatusTemporaryRedirect, SFMC_AUTH_SUCCESSFUL_REDIRECT_URL) // from config?
 }
 
 var state string
@@ -139,8 +146,9 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// maybe sign this with keypair?
-	state = string(uint64(time.Now().UnixNano()))
+	sha := sha256.New()
+	sha.Write([]byte(string(uint64(time.Now().UnixNano()))))
+	state = string(fmt.Sprintf("%x", sha.Sum(nil)))
 
 	conf := &oauth2.Config{
 		RedirectURL: fmt.Sprintf("http://%s%s", LOCAL_HTTP_SERVER, LOCAL_CALLBACK_PATH),
@@ -151,6 +159,7 @@ func main() {
 
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
+
 	router.GET("/", func(c *gin.Context) {
 		c.Redirect(http.StatusTemporaryRedirect, conf.AuthCodeURL(state))
 	})
