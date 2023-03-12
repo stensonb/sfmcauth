@@ -146,9 +146,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	sha := sha256.New()
-	sha.Write([]byte(string(uint64(time.Now().UnixNano()))))
-	state = string(fmt.Sprintf("%x", sha.Sum(nil)))
+	shasum := sha256.New()
+	if _, err := shasum.Write([]byte(fmt.Sprintf("%i", uint64(time.Now().UnixNano())))); err != nil {
+		log.Fatal(err)
+	}
+	state = string(fmt.Sprintf("%x", shasum.Sum(nil)))
 
 	conf := &oauth2.Config{
 		RedirectURL: fmt.Sprintf("http://%s%s", LOCAL_HTTP_SERVER, LOCAL_CALLBACK_PATH),
