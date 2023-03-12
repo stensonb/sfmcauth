@@ -2,107 +2,98 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
+
 	"log"
 	"net/http"
 	"os"
 	"strings"
 
+	"github.com/gin-gonic/gin"
+	jsoniter "github.com/json-iterator/go"
 	"github.com/ravener/discord-oauth2"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/oauth2"
 
-	"github.com/stensonb/sfmcauth/cmd/sfmcsigner/types"
+	"github.com/stensonb/sfmcauth/api/types"
 )
 
 const OIDC_REDIRECT_URL = "http://localhost:3000/auth/callback"
 
+var json = jsoniter.ConfigCompatibleWithStandardLibrary
+
 // TODO limit size of post
-func signRequestHandler(w http.ResponseWriter, req *http.Request) {
-	if req.Method != http.MethodPost {
-		http.Error(w, "not post", http.StatusMethodNotAllowed)
-		return
-	}
-
-	body, err := ioutil.ReadAll(req.Body)
-	if err != nil {
-		http.Error(w, "failed to read body", http.StatusBadRequest)
-		return
-	}
-
-	/*
-	   // TODO figure this out
-	   	if http.DetectContentType(body) != "application/json" {
-	   		log.Println(http.DetectContentType(body))
-	   		http.Error(w, "invalid content-type", http.StatusUnsupportedMediaType)
-	   		return
-	   	}
-	*/
-
+func signRequestHandler(c *gin.Context) {
 	var csr types.CertSignRequest
 
-	err = json.Unmarshal(body, &csr)
-	if err != nil {
-		log.Printf("failed to unmarshal: %s", string(body))
-		http.Error(w, "", http.StatusBadRequest)
+	if err := c.ShouldBind(&csr); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	log.Println(string(body))
+	if signed, err := signCsr(csr); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	} else {
+		c.JSON(http.StatusOK, gin.H{"cert": signed})
+	}
+}
 
-	client, err := NewOIDCClientWithCode(csr.OIDCCode)
+func signCsr(csr types.CertSignRequest) ([]byte, error) {
+	discordIdentity, err := getIdentityFromCode(csr.OIDCCode)
 	if err != nil {
-		log.Println("error on getting OIDC client")
-		http.Error(w, "invalid code", http.StatusBadRequest)
-		return
+		return nil, err
 	}
 
-	// TODO some client call to get username
+	if !allowedAccess(discordIdentity) {
+		return nil, fmt.Errorf("valid discord user prohibited from access: %v", discordIdentity)
+	}
+
+	log.Println(string(csr.PublicKey))
+
+	signed, err := GetSignedCert(csr.PublicKey, discordIdentity)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign key: %w", err)
+	}
+
+	return json.Marshal(signed)
+}
+
+func allowedAccess(id *OIDCScope) bool {
+	// TODO validate username against allowlist
+	return true
+}
+
+func getIdentityFromCode(code string) (*OIDCScope, error) {
+	client, err := NewOIDCClientWithCode(code)
+	if err != nil {
+		return nil, fmt.Errorf("error on getting OIDC client: %w", err)
+	}
+
 	res, err := client.Get("https://discord.com/api/users/@me")
 	if err != nil || res.StatusCode != http.StatusOK {
-		log.Println("error calling GET on getting client")
-		http.Error(w, "discord endpoint failed", http.StatusInternalServerError)
-		return
-
+		return nil, fmt.Errorf("error calling GET on getting client: %w", err)
 	}
 	defer res.Body.Close()
 
-	body, err = ioutil.ReadAll(res.Body)
+	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		http.Error(w, "failed to get response from discord endpoint", http.StatusInternalServerError)
-		return
+		return nil, fmt.Errorf("failed to get response from discord endpoint: %w", err)
 	}
-
-	log.Printf("discord response %s", string(body))
-
-	// TODO validate username against allowlist
 
 	var discordIdentity OIDCScope
 
 	err = json.Unmarshal(body, &discordIdentity)
 	if err != nil {
-		log.Printf("unexpected response from discord: %s", string(body))
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		return nil, fmt.Errorf("unexpected response from discord: %w", err)
 	}
 
-	log.Printf("unmarshalled discord identity: %v", discordIdentity)
-
-	signed, err := GetSignedCert(csr.PublicKey, discordIdentity)
-	if err != nil {
-		http.Error(w, "failed to sign key", http.StatusBadRequest)
-	}
-
-	signedBytes, err := json.Marshal(signed)
-	if err != nil {
-		http.Error(w, "failed to unmarshal key", http.StatusInternalServerError)
-	}
-
-	fmt.Fprintf(w, string(signedBytes))
+	return &discordIdentity, nil
 }
 
-func GetSignedCert(keyToSign string, data OIDCScope) (*types.SignedCert, error) {
+//	log.Printf("unmarshalled discord identity: %v", discordIdentity)
+
+func GetSignedCert(keyToSign string, data *OIDCScope) (*types.SignedCert, error) {
 	signedKeyId := strings.Join([]string{data.Id, data.Username}, "-")
 
 	key, err := os.ReadFile("test_fixtures/id_ed25519")
@@ -125,11 +116,14 @@ func GetSignedCert(keyToSign string, data OIDCScope) (*types.SignedCert, error) 
 }
 
 func main() {
-	http.HandleFunc("/sign", signRequestHandler)
+	gin.SetMode(gin.ReleaseMode)
+	gin.DisableConsoleColor()
+	r := gin.Default()
 
-	// TODO handle shutdowns cleanly with timeout
+	r.POST("/sign", signRequestHandler)
+
 	log.Println("listening on :8080")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	r.Run(":8080")
 }
 
 func NewOIDCClientWithCode(code string) (*http.Client, error) {

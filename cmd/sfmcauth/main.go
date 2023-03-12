@@ -2,34 +2,41 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/ed25519"
-	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/briandowns/spinner"
+	"github.com/gin-gonic/gin"
+	jsoniter "github.com/json-iterator/go"
 	"github.com/mikesmitty/edkey"
 	"github.com/ravener/discord-oauth2"
 	"github.com/skratchdot/open-golang/open"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/oauth2"
 
-	"github.com/stensonb/sfmcauth/cmd/sfmcsigner/types"
+	"github.com/stensonb/sfmcauth/api/types"
 )
 
 const APP_NAME = "sfmcauth"
 
 const SFMC_AUTH_SIGNER_URL = "http://localhost:8080/sign"
+const SFMC_AUTH_SUCCESSFUL_REDIRECT_URL = "https://sf.siliconvortex.com"
 const SFMC_AUTH_ENDPOINT = "localhost" //"sf.siliconvortex.com"
 const SFMC_AUTH_PORT = "22"
 const SFMC_AUTH_USER = "sfmc_auth" //"sfmcauth"
 
+const LOCAL_HTTP_SERVER = "localhost:3000"
+const LOCAL_CALLBACK_PATH = "/auth/callback"
+
 var spin = spinner.New(spinner.CharSets[35], 100*time.Millisecond)
+
+var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 var (
 	version = "dev"
@@ -74,19 +81,6 @@ func NewKeyPair() (*KeyPair, error) {
 	}, nil
 }
 
-type SignedCert struct {
-	cert []byte
-}
-
-func (s *SignedCert) Signer(signer ssh.Signer) (ssh.Signer, error) {
-	pk, _, _, _, err := ssh.ParseAuthorizedKey(s.cert)
-	if err != nil {
-		return nil, err
-	}
-
-	return ssh.NewCertSigner(pk.(*ssh.Certificate), signer)
-}
-
 func GetSignedCert(k *KeyPair, oidc_code string) (*types.SignedCert, error) {
 	csr, err := json.Marshal(types.CertSignRequest{
 		OIDCCode:  oidc_code,
@@ -96,20 +90,15 @@ func GetSignedCert(k *KeyPair, oidc_code string) (*types.SignedCert, error) {
 		return nil, err
 	}
 
-	resp, err := http.Post("http://localhost:8080/sign", "application/json", bytes.NewReader(csr))
+	resp, err := http.Post(SFMC_AUTH_SIGNER_URL, "application/json", bytes.NewReader(csr)) // from config?
 	if err != nil || resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("call to get signed cert failed: %w", err)
 	}
 	defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
 	var ans types.SignedCert
 
-	err = json.Unmarshal(body, &ans)
+	err = json.NewDecoder(resp.Body).Decode(&ans)
 	if err != nil {
 		return nil, err
 	}
@@ -117,19 +106,28 @@ func GetSignedCert(k *KeyPair, oidc_code string) (*types.SignedCert, error) {
 	return &ans, nil
 }
 
-func HandleCallback(w http.ResponseWriter, r *http.Request) {
-	if r.FormValue("state") != state {
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("state does not match"))
-		return
-	}
-
-	oidc_callback_code <- r.FormValue("code")
-
-	w.Write([]byte("thanks.  you can close this window."))
+type RespFromAuthProvider struct {
+	Code  string `form:"code"`
+	State string `form:"state"`
 }
 
-var state = "somerandomstringhere"
+func handleCallback(c *gin.Context) {
+	resp := RespFromAuthProvider{}
+
+	if c.ShouldBind(&resp) != nil {
+		log.Fatal("failed to get authorization code from identity provider")
+	}
+
+	if resp.State != state {
+		log.Fatal("state does not match")
+	}
+
+	oidc_callback_code <- resp.Code
+
+	c.Redirect(http.StatusTemporaryRedirect, SFMC_AUTH_SUCCESSFUL_REDIRECT_URL) // from config?
+}
+
+var state string
 
 var oidc_callback_code = make(chan string)
 
@@ -141,67 +139,75 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// maybe sign this with keypair?
+	state = string(uint64(time.Now().UnixNano()))
+
 	conf := &oauth2.Config{
-		RedirectURL: "http://localhost:3000/auth/callback",
-		ClientID:    "1066256314617053264",
+		RedirectURL: fmt.Sprintf("http://%s%s", LOCAL_HTTP_SERVER, LOCAL_CALLBACK_PATH),
+		ClientID:    "1066256314617053264", //delivered via config service?
 		Scopes:      []string{discord.ScopeIdentify},
 		Endpoint:    discord.Endpoint,
 	}
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, conf.AuthCodeURL(state), http.StatusTemporaryRedirect)
+	gin.SetMode(gin.ReleaseMode)
+	router := gin.New()
+	router.GET("/", func(c *gin.Context) {
+		c.Redirect(http.StatusTemporaryRedirect, conf.AuthCodeURL(state))
 	})
 
-	http.HandleFunc("/auth/callback", HandleCallback)
+	router.GET(LOCAL_CALLBACK_PATH, handleCallback)
 
-	//TODO listen for a single connection, then shut it down
-        //TODO extract listening port from conf
-	go http.ListenAndServe(":3000", nil)
+	srv := http.Server{
+		Addr:    LOCAL_HTTP_SERVER,
+		Handler: router,
+	}
 
- 	open.Run("http://localhost:3000")	
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("listen %s\n", err)
+		}
+	}()
 
-	oidc_code := <- oidc_callback_code
+	open.Run(fmt.Sprintf("http://%s", LOCAL_HTTP_SERVER))
+
+	oidc_code := <-oidc_callback_code
+
+	// got an oidc_code, shutdown http server
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatal("Server Shutdown:", err)
+	}
 
 	signedCert, err := GetSignedCert(k, oidc_code)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	err = ssh_client(k, signedCert)
+	sshConfig, err := GetSshClientConfig(k, signedCert)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = ConnectSsh(sshConfig)
 	if err != nil {
 		log.Fatal(err)
 	}
 }
 
-type SSHClient struct {
-	KeyPair *KeyPair
-}
-
-func NewSSHClient(k *KeyPair) (*SSHClient, error) {
-	return &SSHClient{
-		KeyPair: k,
-	}, nil
-}
-
-func ssh_client(k *KeyPair, signedCert *types.SignedCert) error {
-	//TODO read this from DNS maybe?
-	//var hostKey ssh.PublicKey
-
-	// A public key may be used to authenticate against the remote
-	// server by using an unencrypted PEM-encoded private key file.
-	//
-	// If you have an encrypted private key, the crypto/x509 package
-	// can be used to decrypt it.
-
+func GetSshClientConfig(k *KeyPair, signedCert *types.SignedCert) (*ssh.ClientConfig, error) {
 	signer, err := k.Signer()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
+	log.Println("here")
 	certSigner, err := signedCert.Signer(signer)
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("failed to get signer: %w", err)
 	}
+	log.Println("here too?")
 
 	config := &ssh.ClientConfig{
 		User: SFMC_AUTH_USER,
@@ -213,9 +219,22 @@ func ssh_client(k *KeyPair, signedCert *types.SignedCert) error {
 		//HostKeyCallback: ssh.FixedHostKey(hostKey),
 	}
 
+	return config, nil
+}
+
+func ConnectSsh(config *ssh.ClientConfig) error {
+	//TODO read this from DNS maybe?
+	//var hostKey ssh.PublicKey
+
+	// A public key may be used to authenticate against the remote
+	// server by using an unencrypted PEM-encoded private key file.
+	//
+	// If you have an encrypted private key, the crypto/x509 package
+	// can be used to decrypt it.
+
 	// Connect to the remote server and perform the SSH handshake.
 	endpoint := fmt.Sprintf("%s:%s", SFMC_AUTH_ENDPOINT, SFMC_AUTH_PORT)
-
+	log.Println("got here")
 	for {
 		spin.Start()
 		defer spin.Stop()
@@ -226,7 +245,7 @@ func ssh_client(k *KeyPair, signedCert *types.SignedCert) error {
 		for firstPass || err != nil {
 			client, err = ssh.Dial("tcp", endpoint, config)
 			if err != nil {
-				// TODO exponential decay
+				// TODO exponential delay
 				time.Sleep(10 * time.Second)
 			}
 			firstPass = false
