@@ -7,6 +7,8 @@ import (
 	"crypto/sha256"
 	"encoding/pem"
 	"fmt"
+
+	//"io"
 	"log"
 	"net/http"
 	"strings"
@@ -98,7 +100,6 @@ func GetSignedCert(k *KeyPair, oidc_code string) (*types.SignedCert, error) {
 	defer resp.Body.Close()
 
 	var ans types.SignedCert
-
 	err = json.NewDecoder(resp.Body).Decode(&ans)
 	if err != nil {
 		return nil, err
@@ -213,12 +214,10 @@ func GetSshClientConfig(k *KeyPair, signedCert *types.SignedCert) (*ssh.ClientCo
 		return nil, err
 	}
 
-	log.Println("here")
 	certSigner, err := signedCert.Signer(signer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get signer: %w", err)
 	}
-	log.Println("here too?")
 
 	config := &ssh.ClientConfig{
 		User: SFMC_AUTH_USER,
@@ -244,8 +243,7 @@ func ConnectSsh(config *ssh.ClientConfig) error {
 	// can be used to decrypt it.
 
 	// Connect to the remote server and perform the SSH handshake.
-	endpoint := fmt.Sprintf("%s:%s", SFMC_AUTH_ENDPOINT, SFMC_AUTH_PORT)
-	log.Println("got here")
+
 	for {
 		spin.Start()
 		defer spin.Stop()
@@ -254,7 +252,7 @@ func ConnectSsh(config *ssh.ClientConfig) error {
 
 		firstPass := true
 		for firstPass || err != nil {
-			client, err = ssh.Dial("tcp", endpoint, config)
+			client, err = ssh.Dial("tcp", fmt.Sprintf("%s:%s", SFMC_AUTH_ENDPOINT, SFMC_AUTH_PORT), config)
 			if err != nil {
 				// TODO exponential delay
 				time.Sleep(10 * time.Second)

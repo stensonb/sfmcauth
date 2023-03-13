@@ -61,12 +61,10 @@ func NewSignedCert(caKeySigner ssh.Signer, keyToSign ssh.PublicKey, signedKeyId 
 }
 
 func (s *SignedCert) Signer(signer ssh.Signer) (ssh.Signer, error) {
-	log.Println(string(s.Cert))
 	pk, _, _, _, err := ssh.ParseAuthorizedKey(s.Cert)
 	if err != nil {
 		return nil, err
 	}
-	log.Println("made it here finally too?")
 
 	return ssh.NewCertSigner(pk.(*ssh.Certificate), signer)
 }

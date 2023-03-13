@@ -35,11 +35,11 @@ func signRequestHandler(c *gin.Context) {
 	if signed, err := signCsr(csr); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	} else {
-		c.JSON(http.StatusOK, gin.H{"cert": signed})
+		c.JSON(http.StatusOK, signed)
 	}
 }
 
-func signCsr(csr types.CertSignRequest) ([]byte, error) {
+func signCsr(csr types.CertSignRequest) (*types.SignedCert, error) {
 	discordIdentity, err := getIdentityFromCode(csr.OIDCCode)
 	if err != nil {
 		return nil, err
@@ -49,14 +49,7 @@ func signCsr(csr types.CertSignRequest) ([]byte, error) {
 		return nil, fmt.Errorf("valid discord user prohibited from access: %v", discordIdentity)
 	}
 
-	log.Println(string(csr.PublicKey))
-
-	signed, err := GetSignedCert(csr.PublicKey, discordIdentity)
-	if err != nil {
-		return nil, fmt.Errorf("failed to sign key: %w", err)
-	}
-
-	return json.Marshal(signed)
+	return GetSignedCert(csr.PublicKey, discordIdentity)
 }
 
 func allowedAccess(id *OIDCScope) bool {
