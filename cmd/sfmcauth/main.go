@@ -111,7 +111,7 @@ func GetSignedCert(k *KeyPair, oidc_code string) (*types.SignedCert, error) {
 type RespFromAuthProvider struct {
 	Code  string `form:"code"`
 	State string `form:"state"`
-	//Error string `form:"error"`
+	Error string `form:"error"`
 }
 
 func handleCallback(c *gin.Context) {
@@ -120,6 +120,10 @@ func handleCallback(c *gin.Context) {
 	if c.ShouldBind(&resp) != nil {
 		//log.Fatal("failed to decode authorization response from identity provider")
 		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("stuff"))
+	} else if resp.Error != "" {
+		e := fmt.Errorf("must share identity: %s", resp.Error)
+		c.AbortWithError(http.StatusInternalServerError, e)
+		error_chan <- e
 	} else if resp.Code == "" {
 		//log.Fatal("failed to get authorization code from identity provider")
 		c.AbortWithError(http.StatusInternalServerError, fmt.Errorf("stuff2"))
@@ -138,6 +142,7 @@ func handleCallback(c *gin.Context) {
 var state string
 
 var oidc_callback_code = make(chan string)
+var error_chan = make(chan error)
 
 func main() {
 	log.Printf("version %s, commit %s, built at %s", version, commit, date)
@@ -182,7 +187,12 @@ func main() {
 
 	open.Run(fmt.Sprintf("http://%s", LOCAL_HTTP_SERVER))
 
-	oidc_code := <-oidc_callback_code
+	var oidc_code string
+	select {
+	case oidc_code = <-oidc_callback_code:
+	case e := <-error_chan:
+		log.Fatalf("%s", e)
+	}
 
 	// got an oidc_code, shutdown http server
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
